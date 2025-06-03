@@ -1,57 +1,72 @@
 name: Overleaf Sync with Git
+
 on:
   schedule:
-    - cron: "0/5 * * * *"
+    - cron: "*/5 * * * *"
   push:
   workflow_dispatch:
-      
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-    - name: Delete Old Artifacts
-      uses: actions/github-script@v6
-      id: artifact
-      with:
-        script: |
-          const res = await github.rest.actions.listArtifactsForRepo({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-          })
 
-          res.data.artifacts
-            .forEach(({ id }) => {
-              github.rest.actions.deleteArtifact({
+    steps:
+      - name: Delete Old Artifacts
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const res = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            for (const { id } of res.data.artifacts) {
+              await github.rest.actions.deleteArtifact({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 artifact_id: id,
-              })
-            })
+              });
+            }
 
-    - name: Fetch the latest version from overleaf server
-      uses: subhamx/overleaf_sync_with_git@master
-      with:
-        OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
-        OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
-        OVERLEAF_HOST: "47.120.64.108:8060"
-        OVERLEAF_PROTOCOL: "http"
+      - name: Fetch latest ZIP from self-hosted Overleaf via HTTP
+        env:
+          OVERLEAF_HOST: 47.120.64.108:8060
+          OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
+          OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
+        run: |
+          # 下载 ZIP 包（走 HTTP，不走 HTTPS）
+          curl -sSL \
+            -H "Cookie: ${OVERLEAF_COOKIE}" \
+            "http://${OVERLEAF_HOST}/project/${OVERLEAF_PROJECT_ID}/download/zip" \
+            -o project.zip
 
-    - name: Upload to Project Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: project
-        path: ./artifacts/
+          # 解压到 artifacts 目录
+          mkdir -p artifacts
+          unzip -q project.zip -d ./artifacts
 
-    - uses: actions/checkout@v2
-      with:
-        path: repo/
-    
-    - run: |
-        cd repo/
-        mkdir -p overleaf_remote_src
-        cp -r ../artifacts/* ./overleaf_remote_src
-        git config user.name "Overleaf Sync Bot"
-        git config user.email "actions@github.com"
-        git add .
-        if [[ $(git diff HEAD --stat) == '' ]]; then (echo 'Working tree is clean') 
-        else (git commit -m "Sync with overleaf remote"  && git push) fi
+      - name: Upload to Project Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: project
+          path: ./artifacts/
+
+      - name: Check out repository
+        uses: actions/checkout@v2
+        with:
+          path: repo/
+
+      - name: Commit & push Overleaf contents into Git
+        run: |
+          cd repo/
+          mkdir -p overleaf_remote_src
+          cp -r ../artifacts/* ./overleaf_remote_src
+
+          git config user.name "Overleaf Sync Bot"
+          git config user.email "actions@github.com"
+
+          git add .
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git commit -m "Sync with Overleaf remote"
+            git push
+          else
+            echo "Working tree is clean, no changes to commit."
+          fi
