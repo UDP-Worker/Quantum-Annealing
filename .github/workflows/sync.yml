@@ -1,8 +1,8 @@
-name: Sharelatex Sync
+name: Overleaf Sync with Git
 on:
   schedule:
-    - cron: "0 0/4 * * *"
-    # cron: "30 4,10,16 * * *" # UTC+8: 12:30, 18:30 and 0:30
+    - cron: "0/5 * * * *"
+  push:
   workflow_dispatch:
       
 jobs:
@@ -18,7 +18,7 @@ jobs:
             owner: context.repo.owner,
             repo: context.repo.repo,
           })
-    
+
           res.data.artifacts
             .forEach(({ id }) => {
               github.rest.actions.deleteArtifact({
@@ -28,11 +28,12 @@ jobs:
               })
             })
 
-    - name: Fetch the latest version from sharelatex server
-      uses: MaylonXGT/sharelatex_sync_with_git@master
+    - name: Fetch the latest version from overleaf server
+      uses: subhamx/overleaf_sync_with_git@master
       with:
-        SHARELATEX_PROJECT_ID: ${{ secrets.SHARELATEX_PROJECT_ID }}
-        SHARELATEX_COOKIE: ${{ secrets.SHARELATEX_COOKIE }}
+        OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
+        OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
+        OVERLEAF_HOST: ${{ secrets.OVERLEAF_HOST }}
 
     - name: Upload to Project Artifacts
       uses: actions/upload-artifact@v4
@@ -46,9 +47,10 @@ jobs:
     
     - run: |
         cd repo/
-        cp -r ../artifacts/* ./
-        git config user.name "sharelatex Sync Bot"
+        mkdir -p overleaf_remote_src
+        cp -r ../artifacts/* ./overleaf_remote_src
+        git config user.name "Overleaf Sync Bot"
         git config user.email "actions@github.com"
         git add .
         if [[ $(git diff HEAD --stat) == '' ]]; then (echo 'Working tree is clean') 
-        else (git commit -m "Sync with sharelatex remote"  && git push) fi
+        else (git commit -m "Sync with overleaf remote"  && git push) fi
