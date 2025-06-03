@@ -2,7 +2,7 @@ name: Overleaf Sync with Git
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"   # 每 5 分钟执行一次
   push:
   workflow_dispatch:
 
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Delete Old Artifacts
+      - name: 删除旧的 Artifacts
         uses: actions/github-script@v6
         with:
           script: |
@@ -27,34 +27,49 @@ jobs:
               });
             }
 
-      - name: Fetch latest ZIP from self-hosted Overleaf via HTTP
+      - name: 从自建 Overleaf（HTTP）下载 ZIP 并解压
         env:
+          # “47.120.64.108:8060” 为你的 Overleaf 主机和端口，不要加 “http://” 前缀
           OVERLEAF_HOST: 47.120.64.108:8060
+          # 这是你在仓库 Secrets 里保存的项目 ID（6811b36395df0ce12f422851 改成 683bc213203ba91b3b372879）
           OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
+          # 这是你在浏览器登录后抓到的完整 Cookie（要包含 connect.sid、csrf-token 等登录态字段）
           OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
         run: |
-          # 下载 ZIP 包（走 HTTP，不走 HTTPS）
+          echo "→ 开始从 Overleaf 下载 ZIP（走 HTTP）"
+          
+          # 拼出完整的下载 URL：
+          DOWNLOAD_URL="http://${OVERLEAF_HOST}/project/${OVERLEAF_PROJECT_ID}/download/zip"
+          echo "   下载地址：${DOWNLOAD_URL}"
+
+          # 用 curl 带上 Cookie 去下载
           curl -sSL \
             -H "Cookie: ${OVERLEAF_COOKIE}" \
-            "http://${OVERLEAF_HOST}/project/${OVERLEAF_PROJECT_ID}/download/zip" \
+            "${DOWNLOAD_URL}" \
             -o project.zip
 
-          # 解压到 artifacts 目录
+          # 校验前 4 个字节是否为 PK（正常 ZIP 文件标志）
+          echo "→ 校验 project.zip 文件头："
+          head -c 4 project.zip | od -An -t x1
+
+          # 解压到 ./artifacts 文件夹
+          echo "→ 解压到 artifacts/"
+          rm -rf artifacts
           mkdir -p artifacts
           unzip -q project.zip -d ./artifacts
 
-      - name: Upload to Project Artifacts
+      - name: 上传到 GitHub Action Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: project
+          name: overleaf-project
           path: ./artifacts/
 
-      - name: Check out repository
+      - name: 签出仓库代码
         uses: actions/checkout@v2
         with:
           path: repo/
 
-      - name: Commit & push Overleaf contents into Git
+      - name: 将 Overleaf 内容推送到 Git 仓库
         run: |
           cd repo/
           mkdir -p overleaf_remote_src
@@ -68,5 +83,5 @@ jobs:
             git commit -m "Sync with Overleaf remote"
             git push
           else
-            echo "Working tree is clean, no changes to commit."
+            echo "Working tree is clean，跳过提交。"
           fi
