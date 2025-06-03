@@ -48,7 +48,7 @@ jobs:
             "${DOWNLOAD_URL}" \
             -o project.zip
 
-          # 校验前 4 个字节是否为 PK（正常 ZIP 文件标志）
+          # 校验前 4 个字节（正常 ZIP 文件标志）
           echo "→ 校验 project.zip 文件头："
           head -c 4 project.zip | od -An -t x1
 
